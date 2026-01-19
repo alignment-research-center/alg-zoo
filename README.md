@@ -14,6 +14,12 @@ git clone git@github.com:alignment-research-center/alg-zoo.git
 pip install -e alg-zoo
 ```
 
+Check you can load the 432-parameter example 2nd argmax model:
+```
+from alg_zoo import example_2nd_argmax
+model = example_2nd_argmax()
+```
+
 ## Model families
 
 The zoo contains four families of models trained on different algorithmic tasks. Models are stored in the publicly-accessible GCS folder `gs://arc-ml-public/alg/zoo`, and can be loaded using the appropriate function imported from `alg_zoo`, as detailed below.
