@@ -1,6 +1,6 @@
 import torch as th
 
-from .architectures import DistRNN
+from .architectures import DistMLP, DistRNN
 
 
 def handcrafted_2nd_argmax_2():
@@ -97,3 +97,28 @@ def handcrafted_2nd_argmax(seq_len) -> DistRNN:
             f"No handcrafted 2nd argmax model with seq_len {seq_len}, "
             "please choose one of: 2, 3, 10"
         )
+
+
+def handcrafted_kth_argmax_mlp(seq_len, k) -> DistMLP:
+    model = DistMLP(
+        hidden_size=seq_len * (seq_len - 1),
+        seq_len=seq_len,
+        n_hidden_layers=1,
+        bias=False,
+    )
+    with th.no_grad():
+        W1 = model.linears[0].weight
+        W2 = model.linears[1].weight
+        W1.zero_()
+        W2.zero_()
+        h = 0
+        for i in range(seq_len):
+            for j in range(seq_len):
+                if i == j:
+                    continue
+                W1[h, i] = 1
+                W1[h, j] = -1
+                W2[i, h] = -(k - 1)
+                W2[j, h] = -(seq_len - k)
+                h += 1
+    return model
