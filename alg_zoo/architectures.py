@@ -122,3 +122,60 @@ class ScalarTransformer(AttentionOnlyTransformer):
             n_heads=n_heads,
             bias=bias,
         )
+
+
+class MLP(th.nn.Module):
+    def __init__(
+        self, input_size, hidden_size, output_size, n_hidden_layers=1, bias=False
+    ):
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        self.n_hidden_layers = n_hidden_layers
+        self.bias = bias
+        super().__init__()
+        if n_hidden_layers == 0:
+            self.hidden_size = None
+            self.linears = th.nn.ModuleList(
+                [th.nn.Linear(input_size, output_size, bias=bias)]
+            )
+        else:
+            self.linears = th.nn.ModuleList(
+                [th.nn.Linear(input_size, hidden_size, bias=bias)]
+                + [
+                    th.nn.Linear(hidden_size, hidden_size, bias=bias)
+                    for _ in range(n_hidden_layers - 1)
+                ]
+                + [th.nn.Linear(hidden_size, output_size, bias=bias)]
+            )
+
+    def forward(self, x):
+        for i, linear in enumerate(self.linears):
+            x = linear(x)
+            if i < len(self.linears) - 1:
+                x = th.nn.functional.relu(x)
+        return x
+
+    @property
+    def device(self):
+        return self.linears[-1].weight.device
+
+    @property
+    def dtype(self):
+        return self.linears[-1].weight.dtype
+
+
+class DistMLP(MLP):
+    def __init__(self, hidden_size, seq_len, n_hidden_layers=1, bias=False):
+        self.seq_len = seq_len
+        super().__init__(
+            seq_len, hidden_size, seq_len, n_hidden_layers=n_hidden_layers, bias=bias
+        )
+
+
+class ScalarMLP(MLP):
+    def __init__(self, hidden_size, seq_len, n_hidden_layers=1, bias=False):
+        self.seq_len = seq_len
+        super().__init__(
+            seq_len, hidden_size, 1, n_hidden_layers=n_hidden_layers, bias=bias
+        )

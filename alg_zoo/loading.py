@@ -3,7 +3,14 @@ import os
 import blobfile as bf
 import torch as th
 
-from .architectures import DistRNN, DistTransformer, ScalarRNN, ScalarTransformer
+from .architectures import (
+    DistMLP,
+    DistRNN,
+    DistTransformer,
+    ScalarMLP,
+    ScalarRNN,
+    ScalarTransformer,
+)
 
 
 def load_state_dict(model_path):
@@ -62,6 +69,35 @@ def load_dist_transformer(model_path, **kwargs):
 
 def load_scalar_transformer(model_path, **kwargs):
     return load_transformer(ScalarTransformer, model_path, **kwargs)
+
+
+def load_mlp(model_cls, model_path, bias=False):
+    state_dict = load_state_dict(model_path)
+    linear_indices = [
+        key.split(".")[1] for key in state_dict.keys() if key.split(".")[0] == "linears"
+    ]
+    n_hidden_layers = len(set(linear_indices)) - 1
+    if n_hidden_layers == 0:
+        _, seq_len = state_dict["linears.0.weight"].shape
+        hidden_size = None
+    else:
+        hidden_size, seq_len = state_dict["linears.0.weight"].shape
+    model = model_cls(
+        hidden_size=hidden_size,
+        seq_len=seq_len,
+        n_hidden_layers=n_hidden_layers,
+        bias=bias,
+    )
+    model.load_state_dict(state_dict)
+    return model
+
+
+def load_dist_mlp(model_path, **kwargs):
+    return load_mlp(DistMLP, model_path, **kwargs)
+
+
+def load_scalar_mlp(model_path, **kwargs):
+    return load_mlp(ScalarMLP, model_path, **kwargs)
 
 
 def example_2nd_argmax() -> DistRNN:

@@ -6,7 +6,14 @@ from contextlib import nullcontext
 import blobfile as bf
 import torch as th
 
-from .architectures import DistRNN, DistTransformer, ScalarRNN, ScalarTransformer
+from .architectures import (
+    DistMLP,
+    DistRNN,
+    DistTransformer,
+    ScalarMLP,
+    ScalarRNN,
+    ScalarTransformer,
+)
 from .logger import Logger
 from .tasks import task_registry
 
@@ -47,6 +54,7 @@ def train(
     seq_len,
     n_transformer_layers=2,
     n_transformer_heads=1,
+    n_mlp_hidden_layers=None,
     bias=False,
     discrete_eot=False,
     weight_decay=0.001,
@@ -69,6 +77,8 @@ def train(
     - seq_len: length of each input sequence
     - n_transformer_layers: for discrete inputs, number of transformer layers
     - n_transformer_heads: for discrete inputs, number of transformer heads
+    - n_mlp_hidden_layers: for continuous inputs, number of hidden MLP layers,
+        or None to use an RNN
     - bias: whether to use biases in the model
     - discrete_eot: for discrete inputs, whether to append an extra token to
         each sequence for the transformer to use to produce its output
@@ -89,21 +99,32 @@ def train(
     th.backends.cudnn.deterministic = True
     th.backends.cudnn.benchmark = False
     task, input_type, task_type = task_registry[task_name]
+    if input_type == "continuous" and n_mlp_hidden_layers is not None:
+        use_mlp = True
+        task_label = f"{task_name}_mlp"
+    else:
+        use_mlp = False
+        task_label = task_name
     transformer_kwargs = {
         "n_layers": n_transformer_layers,
         "n_heads": n_transformer_heads,
     }
+    mlp_kwargs = {
+        "n_hidden_layers": n_mlp_hidden_layers,
+    }
     model_cls, model_kwargs = {
-        ("continuous", "dist"): (DistRNN, {}),
-        ("continuous", "scalar"): (ScalarRNN, {}),
-        ("discrete", "dist"): (DistTransformer, transformer_kwargs),
-        ("discrete", "scalar"): (ScalarTransformer, transformer_kwargs),
-    }[(input_type, task_type)]
+        ("continuous", "dist", False): (DistRNN, {}),
+        ("continuous", "scalar", False): (ScalarRNN, {}),
+        ("discrete", "dist", False): (DistTransformer, transformer_kwargs),
+        ("discrete", "scalar", False): (ScalarTransformer, transformer_kwargs),
+        ("continuous", "dist", True): (DistMLP, mlp_kwargs),
+        ("continuous", "scalar", True): (ScalarMLP, mlp_kwargs),
+    }[(input_type, task_type, use_mlp)]
     model = model_cls(
         hidden_size=hidden_size, seq_len=seq_len, bias=bias, **model_kwargs
     )
     model = model.to(torch_device())
-    save_model(model, f"{task_name}_{hidden_size}_{seq_len}_{0}_{seed}")
+    save_model(model, f"{task_label}_{hidden_size}_{seq_len}_{0}_{seed}")
     lr = lr_base / hidden_size**0.5
     optimizer = th.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     n_steps = {"train": n_train // batch_size, "val": n_val // batch_size}
@@ -118,7 +139,7 @@ def train(
     for period in ["train", "val"]:
         print(f"Running {period}:")
         logger = Logger(
-            f"{period}_{task_name}_{hidden_size}_{seq_len}_{n_train}_{seed}"
+            f"{period}_{task_label}_{hidden_size}_{seq_len}_{n_train}_{seed}"
         )
         start_time = time.time()
         with th.no_grad() if period != "train" else nullcontext():
@@ -164,5 +185,5 @@ def train(
                 if period == "train" and (step + 1) in checkpoint_steps:
                     save_model(
                         model,
-                        f"{task_name}_{hidden_size}_{seq_len}_{(step + 1) * batch_size}_{seed}",
+                        f"{task_label}_{hidden_size}_{seq_len}_{(step + 1) * batch_size}_{seed}",
                     )
